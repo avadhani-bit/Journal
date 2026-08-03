@@ -1183,9 +1183,11 @@ function init() {
       $('app').classList.remove('show');
       $('auth-gate').classList.add('show');
       btn.disabled = false;
+      window.__journalReady = true;   // signed out is a valid state, not a failure
       return;
     }
     $('auth-gate').classList.remove('show');
+    window.__journalReady = true;   // gate cleared; app is running
 
     if (user.photoURL) $('avatar-btn').innerHTML = '<img src="' + user.photoURL + '" referrerpolicy="no-referrer" alt="">';
     else { const a = $('avatar-inner'); if (a) a.textContent = (user.email || 'U')[0].toUpperCase(); }
@@ -1196,6 +1198,7 @@ function init() {
     $('app').classList.add('show');
     if (!ready) { ready = true; wireChrome(); }
     render();
+    window.__journalReady = true;
   });
 }
 

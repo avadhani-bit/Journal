@@ -1,18 +1,20 @@
-/* Journal — Service Worker v2 */
-const CACHE = 'journal-v2';
+/* Journal — Service Worker v3 */
+const CACHE = 'journal-v3';
 const PRECACHE = [
   './index.html',
-  './css/app.css',
-  './js/app.js',
+  './css/app.css?v=3',
+  './js/app.js?v=3',
   './manifest.json',
   './assets/icon-192.png',
   './assets/icon-512.png',
 ];
 
 self.addEventListener('install', e => {
+  // Cache files individually so one bad URL can't fail the whole install
+  // and leave the app wedged on an old worker.
   e.waitUntil(
     caches.open(CACHE)
-      .then(c => c.addAll(PRECACHE))
+      .then(c => Promise.all(PRECACHE.map(u => c.add(u).catch(() => {}))))
       .then(() => self.skipWaiting())
   );
 });

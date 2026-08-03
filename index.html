@@ -18,7 +18,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/app.css" />
+  <link rel="stylesheet" href="css/app.css?v=3" />
 </head>
 <body>
 
@@ -103,12 +103,67 @@
 
   <div class="toast" id="toast"></div>
 
+  <!-- Recovery banner: shown only if the app fails to start -->
+  <div id="recover">
+    <div class="recover-card">
+      <h2>Something didn't load right</h2>
+      <p>This is usually an old cached version of the app. Clearing it should fix things — your entries aren't affected.</p>
+      <button id="recover-btn">Clear cache and reload</button>
+      <div id="recover-detail"></div>
+    </div>
+  </div>
+
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
-  <script src="js/app.js"></script>
+  <script src="js/app.js?v=3"></script>
 
   <script>
+    // ── Self-healing: wipe caches + service worker, then reload ──
+    function hardReset() {
+      var jobs = [];
+      if ('caches' in window) {
+        jobs.push(caches.keys().then(function (ks) {
+          return Promise.all(ks.map(function (k) { return caches.delete(k); }));
+        }));
+      }
+      if ('serviceWorker' in navigator) {
+        jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+          return Promise.all(rs.map(function (r) { return r.unregister(); }));
+        }));
+      }
+      return Promise.all(jobs)['catch'](function () {}).then(function () {
+        window.location.replace(window.location.pathname + '?fresh=' + Date.now());
+      });
+    }
+    document.getElementById('recover-btn').onclick = hardReset;
+
+    function showRecover(msg) {
+      var el = document.getElementById('recover');
+      if (!el) return;
+      el.classList.add('show');
+      var d = document.getElementById('recover-detail');
+      if (d && msg) d.textContent = msg;
+      var b = document.getElementById('boot');
+      if (b) b.classList.add('hide');
+    }
+
+    // If a script error escapes before the app is running, offer the fix.
+    window.addEventListener('error', function (ev) {
+      if (!window.__journalReady) {
+        showRecover(ev && ev.message ? String(ev.message) : '');
+      }
+    });
+
+    // Safety net: if nothing has rendered after 12s, surface the recovery card.
+    setTimeout(function () {
+      var c = document.getElementById('content');
+      var gateOpen = document.getElementById('auth-gate').classList.contains('show');
+      if (!window.__journalReady && !gateOpen && (!c || !c.innerHTML.trim())) {
+        showRecover('The app did not finish loading.');
+      }
+    }, 12000);
+
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {
         navigator.serviceWorker.register('./sw.js').then(function (reg) {

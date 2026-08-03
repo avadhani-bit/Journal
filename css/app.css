@@ -525,6 +525,23 @@ body.dark .notice { color: var(--amber); }
 }
 .toast.show { opacity: 1; transform: translateX(-50%); }
 
+/* ─── Recovery card ─── */
+#recover {
+  position: fixed; inset: 0; z-index: 9999; background: var(--bg);
+  display: none; align-items: center; justify-content: center; padding: 24px;
+}
+#recover.show { display: flex; }
+.recover-card { max-width: 380px; text-align: center; }
+.recover-card h2 { font-size: 1.15rem; font-weight: 700; margin-bottom: 8px; letter-spacing: -.02em; }
+.recover-card p { font-size: .87rem; color: var(--text-2); line-height: 1.6; margin-bottom: 18px; }
+#recover-btn {
+  padding: 11px 22px; border-radius: var(--r-md);
+  background: var(--accent); color: #fff; font-size: .88rem; font-weight: 600;
+  transition: background var(--t);
+}
+#recover-btn:hover { background: var(--accent-hover); }
+#recover-detail { margin-top: 14px; font-size: .72rem; color: var(--text-3); word-break: break-word; }
+
 /* ─── Bottom nav (mobile) ─── */
 .bottom-nav { display: none; }
 
