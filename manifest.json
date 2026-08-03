@@ -1,0 +1,27 @@
+{
+  "name": "Journal",
+  "short_name": "Journal",
+  "description": "A daily journal with prompts, mood tracking, and check-in streaks.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#F8F9FC",
+  "theme_color": "#6366F1",
+  "icons": [
+    {
+      "src": "assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "scope": "./",
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ]
+}
