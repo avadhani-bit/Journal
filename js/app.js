@@ -154,13 +154,37 @@ const PROMPTS = [
 ];
 
 const MOODS = [
-  { v: 1, e: '😔', l: 'Rough', color: '#EF4444' },
-  { v: 2, e: '😕', l: 'Low',   color: '#F59E0B' },
-  { v: 3, e: '😐', l: 'Okay',  color: '#9CA3AF' },
-  { v: 4, e: '🙂', l: 'Good',  color: '#6EE7B7' },
-  { v: 5, e: '😄', l: 'Great', color: '#10B981' },
+  { v: 1, l: 'Rough', color: '#EF4444' },
+  { v: 2, l: 'Low',   color: '#F59E0B' },
+  { v: 3, l: 'Okay',  color: '#9CA3AF' },
+  { v: 4, l: 'Good',  color: '#22B07D' },
+  { v: 5, l: 'Great', color: '#10B981' },
 ];
 function moodInfo(v) { return MOODS.find(m => m.v === v); }
+
+// ─── MOOD ICONS (hand-drawn faces, matching CheckCheck's stroke-icon style) ──
+
+const MOOD_FACE_PARTS = {
+  1: '<path d="M7 8.7L10 10"/><path d="M17 8.7L14 10"/><circle cx="8.7" cy="11.3" r="1" fill="currentColor" stroke="none"/><circle cx="15.3" cy="11.3" r="1" fill="currentColor" stroke="none"/><path d="M8 17.5Q12 13.3 16 17.5"/>',
+  2: '<circle cx="8.7" cy="10.8" r="1" fill="currentColor" stroke="none"/><circle cx="15.3" cy="10.8" r="1" fill="currentColor" stroke="none"/><path d="M8 16.2Q12 14.3 16 16.2"/>',
+  3: '<circle cx="8.7" cy="10.8" r="1" fill="currentColor" stroke="none"/><circle cx="15.3" cy="10.8" r="1" fill="currentColor" stroke="none"/><path d="M8 15L16 15"/>',
+  4: '<circle cx="8.7" cy="10.6" r="1" fill="currentColor" stroke="none"/><circle cx="15.3" cy="10.6" r="1" fill="currentColor" stroke="none"/><path d="M8 14Q12 16.6 16 14"/>',
+  5: '<path d="M7.4 10.6Q8.7 9.2 10 10.6"/><path d="M14 10.6Q15.3 9.2 16.6 10.6"/><path d="M7.5 13.6Q12 18.6 16.5 13.6"/>',
+};
+
+function moodIcon(v, size, colorOverride) {
+  size = size || 22;
+  const m = moodInfo(v);
+  const color = colorOverride || (m ? m.color : 'currentColor');
+  const parts = MOOD_FACE_PARTS[v] || '';
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex-shrink:0;color:${color}"><circle cx="12" cy="12" r="9"/>${parts}</svg>`;
+}
+
+// Neutral placeholder icon for entries with no mood set (a simple page/pencil mark)
+function noMoodIcon(size) {
+  size = size || 22;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex-shrink:0;color:var(--text-3)"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`;
+}
 function promptForDate(key) {
   let hash = 0;
   for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
@@ -316,7 +340,7 @@ function renderToday() {
           </div>
 
           <div class="mood-picker" id="mood-picker">
-            ${MOODS.map(m => `<button class="mood-opt${state.draftMood === m.v ? ' selected' : ''}" data-mood="${m.v}">${m.e}<span>${m.l}</span></button>`).join('')}
+            ${MOODS.map(m => `<button class="mood-opt${state.draftMood === m.v ? ' selected' : ''}" data-mood="${m.v}">${moodIcon(m.v, 24)}<span>${m.l}</span></button>`).join('')}
           </div>
 
           <textarea class="composer-textarea" id="entry-text" placeholder="Write freely… what's on your mind today?">${escHtml(existing ? existing.text : '')}</textarea>
@@ -476,7 +500,7 @@ function renderHistory() {
         <input type="text" class="form-input" id="search-input" placeholder="Search entries and tags…" value="${escHtml(state.historySearch)}">
         <select class="form-input" id="mood-filter" style="max-width:160px">
           <option value="">All moods</option>
-          ${MOODS.map(m => `<option value="${m.v}" ${state.historyMoodFilter === String(m.v) ? 'selected' : ''}>${m.e} ${m.l}</option>`).join('')}
+          ${MOODS.map(m => `<option value="${m.v}" ${state.historyMoodFilter === String(m.v) ? 'selected' : ''}>${m.l}</option>`).join('')}
         </select>
       </div>
       <div id="entry-list"></div>
@@ -515,7 +539,7 @@ function entryRowHTML(key, e) {
   const mi = moodInfo(e.mood);
   const thumb = e.photo
     ? `<img class="entry-thumb" src="${e.photo}">`
-    : `<div class="entry-mood-badge">${mi ? mi.e : '📝'}</div>`;
+    : `<div class="entry-mood-badge">${mi ? moodIcon(mi.v, 22) : noMoodIcon(20)}</div>`;
   return `
     <div class="entry-row" data-open-entry="${key}">
       ${thumb}
@@ -537,7 +561,7 @@ function openEntryModal(key) {
   const mi = moodInfo(e.mood);
   document.getElementById('modal-title').textContent = fmt.full(key);
   document.getElementById('modal-body').innerHTML = `
-    ${mi ? `<div style="font-size:2rem;margin-bottom:10px">${mi.e} <span style="font-size:.85rem;color:var(--text-2);font-weight:600">${mi.l}</span></div>` : ''}
+    ${mi ? `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">${moodIcon(mi.v, 32)}<span style="font-size:.9rem;color:var(--text-2);font-weight:600">${mi.l}</span></div>` : ''}
     ${e.photo ? `<img src="${e.photo}" style="width:100%;border-radius:var(--radius-md);margin-bottom:14px;border:1px solid var(--border-light)">` : ''}
     <div style="white-space:pre-wrap;font-size:.9rem;line-height:1.6;color:var(--text-1)">${escHtml(e.text || '(no text)')}</div>
     ${(e.tags || []).length ? `<div class="tag-row" style="margin-top:14px">${e.tags.map(t => `<span class="tag-chip">#${escHtml(t)}</span>`).join('')}</div>` : ''}
@@ -601,7 +625,7 @@ function renderCalendarView() {
           const isToday = key === todayKey();
           const style = mi ? `background:${mi.color};color:#fff;` : (e ? 'background:var(--accent);color:#fff;' : '');
           return `<div class="month-cal-cell${e ? ' has-entry' : ''}${isToday ? ' today' : ''}" style="${style}" ${e ? `data-open-entry="${key}"` : ''}>
-            <span>${day}</span>${mi ? `<span class="mcc-emoji">${mi.e}</span>` : ''}
+            <span>${day}</span>${mi ? `<span class="mcc-emoji">${moodIcon(mi.v, 14, '#fff')}</span>` : ''}
           </div>`;
         }).join('')}
       </div>
