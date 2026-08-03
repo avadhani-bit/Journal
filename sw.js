@@ -1,5 +1,5 @@
-/* Journal — Service Worker v1 */
-const CACHE = 'journal-v1';
+/* Journal — Service Worker v2 */
+const CACHE = 'journal-v2';
 const PRECACHE = [
   './index.html',
   './css/app.css',
@@ -28,7 +28,7 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const url = e.request.url;
 
-  // Never intercept Firebase, Google auth, or third-party requests
+  // Never intercept Firebase, Google auth, fonts, or other third-party requests
   if (
     url.includes('firebaseapp.com') ||
     url.includes('googleapis.com') ||
@@ -38,22 +38,26 @@ self.addEventListener('fetch', e => {
     e.request.method !== 'GET'
   ) return;
 
-  // Page navigations: network-first so fresh deploys show up right away,
-  // fall back to the cached shell when offline.
+  // Navigations: network-first so a fresh deploy shows up immediately,
+  // falling back to the cached shell when offline.
   if (e.request.mode === 'navigate') {
     e.respondWith(
       fetch(e.request).then(res => {
-        caches.open(CACHE).then(c => c.put('./index.html', res.clone()));
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put('./index.html', copy));
         return res;
       }).catch(() => caches.match('./index.html'))
     );
     return;
   }
 
-  // App shell assets: network-first, cache as an offline fallback.
+  // App shell: network-first, cache as offline fallback.
   e.respondWith(
     fetch(e.request).then(res => {
-      if (res.ok) caches.open(CACHE).then(c => c.put(e.request, res.clone()));
+      if (res.ok) {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, copy));
+      }
       return res;
     }).catch(() => caches.match(e.request))
   );
