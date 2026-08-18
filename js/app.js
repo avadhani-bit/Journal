@@ -275,21 +275,64 @@ function randomHex(n) {
   crypto.getRandomValues(arr);
   return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
 }
+// The PIN record lives on the account in Firestore, so the lock follows you to
+// any browser or device you sign in from. localStorage is only an offline
+// cache of that record — it is never the source of truth.
+const secDoc = () => fbStore.collection('users').doc(fbUser.uid).collection('settings').doc('security');
+
 function getPinRecord() {
   try { return JSON.parse(localStorage.getItem(LS.pin) || 'null'); } catch { return null; }
 }
+function cachePinRecord(rec) {
+  if (rec) localStorage.setItem(LS.pin, JSON.stringify(rec));
+  else localStorage.removeItem(LS.pin);
+}
 function hasPinLock() { return !!getPinRecord(); }
+
+// Called once after sign-in, before the app is revealed. Returns true when the
+// account's lock state is known for certain, false when we're working from cache.
+async function pullPinRecord() {
+  if (!fbUser) return false;
+  try {
+    const snap = await secDoc().get();
+    if (snap.exists) {
+      const d = snap.data() || {};
+      // An explicit tombstone means the lock was deliberately turned off on
+      // some device. Without it, a stale local cache would look identical to
+      // "never synced" and this device would resurrect the old PIN.
+      if (d.disabled) { cachePinRecord(null); return true; }
+      if (d.salt && d.hash) { cachePinRecord({ salt: d.salt, hash: d.hash, length: d.length || 4 }); return true; }
+    }
+    // No record at all: either a new account, or a device-only PIN left by the
+    // original build. Migrate that one up so the lock starts applying everywhere.
+    const local = getPinRecord();
+    if (local) { await secDoc().set(local); return true; }
+    cachePinRecord(null);
+    return true;
+  } catch (err) {
+    console.warn('could not read lock state', err);
+    return false;   // offline: fall back to whatever this device has cached
+  }
+}
+
 async function setPin(pin) {
   const salt = randomHex(16);
   const hash = await sha256Hex(salt + ':' + pin);
-  localStorage.setItem(LS.pin, JSON.stringify({ salt, hash, length: pin.length }));
+  const rec = { salt, hash, length: pin.length };
+  await secDoc().set(rec);   // must reach the account, or the lock won't follow you
+  cachePinRecord(rec);
 }
 async function verifyPinValue(pin) {
   const rec = getPinRecord();
   if (!rec) return true;
   return (await sha256Hex(rec.salt + ':' + pin)) === rec.hash;
 }
-function clearPinLock() { localStorage.removeItem(LS.pin); }
+async function clearPinLock() {
+  // Tombstone rather than delete — see pullPinRecord.
+  try { await secDoc().set({ disabled: true, updatedAt: Date.now() }); }
+  catch (err) { console.warn('could not clear lock', err); }
+  cachePinRecord(null);
+}
 
 let pinCtrl = null;
 
@@ -374,9 +417,9 @@ function unlockFlow() {
       sub: 'Unlock your journal',
       requiredLen: rec.length,
       showForgot: true,
-      onForgot: () => {
-        if (!confirm("Forgot your PIN? This removes the PIN lock — your entries are safe and untouched. You can set a new PIN afterward in Settings.")) return;
-        clearPinLock();
+      onForgot: async () => {
+        if (!confirm("Forgot your PIN? This removes the PIN lock from your account, on every device — your entries are safe and untouched. You can set a new PIN afterward in Settings.")) return;
+        await clearPinLock();
         closePinGate();
         toast('PIN lock removed');
         resolve(true);
@@ -405,9 +448,12 @@ function createPinFlow() {
           onCancel: () => resolve(false),
           onSubmit: async pin2 => {
             if (pin2 !== first) return { ok: false, error: "PINs didn't match — try again" };
-            await setPin(pin2);
+            // If this can't reach the account the lock would only exist on this
+            // device — which is the bug we're fixing. Fail loudly instead.
+            try { await setPin(pin2); }
+            catch { return { ok: false, error: "Couldn't save to your account — check your connection" }; }
             closePinGate();
-            toast('PIN lock turned on');
+            toast('PIN lock on, across your devices');
             resolve(true);
           },
         });
@@ -446,7 +492,7 @@ function disablePinFlow() {
       onCancel: () => resolve(false),
       onSubmit: async pin => {
         if (!(await verifyPinValue(pin))) return { ok: false, error: 'Incorrect PIN' };
-        clearPinLock();
+        await clearPinLock();
         closePinGate();
         toast('PIN lock turned off');
         resolve(true);
@@ -1288,7 +1334,7 @@ function renderSettings() {
     <div class="card">
       <div class="card-title">Privacy</div>
       <div class="set-row">
-        <div><div class="lbl">PIN lock</div><p>Require a PIN to open the journal, on this device</p></div>
+        <div><div class="lbl">PIN lock</div><p>Require a PIN to open the journal, on every device you sign in from</p></div>
         <button class="btn-secondary" id="pin-toggle">${hasPinLock() ? 'On' : 'Off'}</button>
       </div>
       ${hasPinLock() ? `
@@ -1499,11 +1545,16 @@ function init() {
     if (user.photoURL) $('avatar-btn').innerHTML = '<img src="' + user.photoURL + '" referrerpolicy="no-referrer" alt="">';
     else { const a = $('avatar-inner'); if (a) a.textContent = (user.email || 'U')[0].toUpperCase(); }
 
-    await pullAll();
+    // Read the account's lock state and clear the gate BEFORE fetching entries,
+    // so nothing is pulled down or rendered behind the PIN screen.
+    await pullPinRecord();
 
     $('boot').classList.add('hide');
     if (!ready) { ready = true; wireChrome(); wirePinPad(); }
     if (hasPinLock()) await unlockFlow();
+
+    await pullAll();
+
     $('app').classList.add('show');
     render();
     window.__journalReady = true;
