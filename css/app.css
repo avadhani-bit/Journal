@@ -137,6 +137,44 @@ button { background: none; border: none; cursor: pointer; }
 #google-signin-btn:disabled { opacity: .55; }
 .gate-error { color: var(--red); font-size: .78rem; min-height: 1em; }
 
+/* ─── PIN gate ─── */
+#pin-gate {
+  position: fixed; inset: 0; z-index: 9997; background: var(--bg);
+  display: none; align-items: center; justify-content: center; padding: 24px;
+}
+#pin-gate.show { display: flex; }
+.pin-dots { display: flex; gap: 12px; margin: 8px 0 4px; min-height: 14px; }
+.pin-dot { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--border); transition: all .15s; }
+.pin-dot.filled { background: var(--accent); border-color: var(--accent); }
+.pin-dots.shake { animation: pinshake .38s; }
+@keyframes pinshake {
+  10%, 90% { transform: translateX(-1px); }
+  20%, 80% { transform: translateX(2px); }
+  30%, 50%, 70% { transform: translateX(-4px); }
+  40%, 60% { transform: translateX(4px); }
+}
+.pin-pad { display: grid; grid-template-columns: repeat(3, 64px); gap: 12px; margin-top: 24px; }
+.pin-pad button {
+  width: 64px; height: 64px; border-radius: 50%;
+  background: var(--surface-2); border: 1px solid var(--border-soft);
+  font-size: 1.3rem; font-weight: 600; color: var(--text-1);
+  display: flex; align-items: center; justify-content: center;
+  transition: background var(--t), transform var(--t);
+}
+.pin-pad button .ic { width: 20px; height: 20px; }
+.pin-pad button:hover { background: var(--surface-3); }
+.pin-pad button:active { transform: scale(.94); }
+.pin-pad #pin-back { background: none; border: none; color: var(--text-2); }
+.pin-pad #pin-back:hover { background: var(--surface-2); }
+.pin-key-alt {
+  background: none !important; border: none !important;
+  font-size: .78rem !important; font-weight: 600 !important; color: var(--text-2);
+  visibility: hidden;
+}
+.link-btn { margin-top: 16px; font-size: .8rem; font-weight: 600; color: var(--text-3); text-decoration: underline; }
+.link-btn:hover { color: var(--text-1); }
+.btn-primary:disabled { opacity: .45; pointer-events: none; }
+
 #boot { position: fixed; inset: 0; z-index: 9998; background: var(--bg);
   display: flex; align-items: center; justify-content: center; }
 #boot.hide { display: none; }
@@ -413,6 +451,7 @@ body.dark .notice { color: var(--amber); }
   border-radius: var(--r-md); padding: 14px 12px; box-shadow: var(--sh-sm); }
 .stat-val { font-size: 1.5rem; font-weight: 800; letter-spacing: -.04em; line-height: 1; }
 .stat-lbl { font-size: .7rem; color: var(--text-3); font-weight: 600; margin-top: 5px; }
+.trend-note { font-size: .68rem; font-weight: 700; color: var(--text-3); margin-top: 4px; }
 
 /* ─── Calendar ─── */
 .month-nav { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 16px; }

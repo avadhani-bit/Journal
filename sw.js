@@ -1,9 +1,9 @@
-/* Journal — Service Worker v3 */
-const CACHE = 'journal-v3';
+/* Journal — Service Worker v4 */
+const CACHE = 'journal-v4';
 const PRECACHE = [
   './index.html',
-  './css/app.css?v=3',
-  './js/app.js?v=3',
+  './css/app.css?v=4',
+  './js/app.js?v=4',
   './manifest.json',
   './assets/icon-192.png',
   './assets/icon-512.png',

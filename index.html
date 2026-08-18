@@ -18,7 +18,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/app.css?v=3" />
+  <link rel="stylesheet" href="css/app.css?v=4" />
 </head>
 <body>
 
@@ -33,6 +33,35 @@
         Continue with Google
       </button>
       <div id="signin-error" class="gate-error"></div>
+    </div>
+  </div>
+
+  <!-- PIN gate -->
+  <div id="pin-gate">
+    <div class="gate-card">
+      <img src="assets/icon-192.png" width="56" height="56" class="gate-icon" alt="" />
+      <h1 class="gate-title" id="pin-title">Enter PIN</h1>
+      <p class="gate-sub" id="pin-sub">Unlock your journal</p>
+      <div class="pin-dots" id="pin-dots"></div>
+      <div class="pin-pad" id="pin-pad">
+        <button type="button" data-k="1">1</button>
+        <button type="button" data-k="2">2</button>
+        <button type="button" data-k="3">3</button>
+        <button type="button" data-k="4">4</button>
+        <button type="button" data-k="5">5</button>
+        <button type="button" data-k="6">6</button>
+        <button type="button" data-k="7">7</button>
+        <button type="button" data-k="8">8</button>
+        <button type="button" data-k="9">9</button>
+        <button type="button" class="pin-key-alt" id="pin-cancel">Cancel</button>
+        <button type="button" data-k="0">0</button>
+        <button type="button" id="pin-back" aria-label="Backspace">
+          <svg viewBox="0 0 24 24" class="ic"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><path d="M18 9l-6 6M12 9l6 6"/></svg>
+        </button>
+      </div>
+      <div id="pin-error" class="gate-error"></div>
+      <button class="btn-primary" id="pin-continue" style="display:none;margin-top:6px">Continue</button>
+      <button class="link-btn" id="pin-forgot" style="display:none">Forgot PIN?</button>
     </div>
   </div>
 
@@ -116,7 +145,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
-  <script src="js/app.js?v=3"></script>
+  <script src="js/app.js?v=4"></script>
 
   <script>
     // ── Self-healing: wipe caches + service worker, then reload ──

@@ -175,7 +175,7 @@ function isEmpty(e) {
 const MOODS = [
   { v: 1, l: 'Rough', c: '#EF4444' },
   { v: 2, l: 'Low',   c: '#F59E0B' },
-  { v: 3, l: 'Okay',  c: '#9B9CA8' },
+  { v: 3, l: 'Okay',  c: '#64748B' },
   { v: 4, l: 'Good',  c: '#22B07D' },
   { v: 5, l: 'Great', c: '#10B981' },
 ];
@@ -239,7 +239,7 @@ function promptFor(k) {
 
 /* ─── Storage ─────────────────────────────────────────────────── */
 
-const LS = { entries: 'jr3_entries', theme: 'jr3_theme', prefs: 'jr3_prefs' };
+const LS = { entries: 'jr3_entries', theme: 'jr3_theme', prefs: 'jr3_prefs', pin: 'jr3_pin' };
 const DB = { entries: {}, prefs: { hidePrompt: false } };
 
 function loadLocal() {
@@ -260,6 +260,207 @@ function loadLocal() {
 }
 function saveLocal() { localStorage.setItem(LS.entries, JSON.stringify(DB.entries)); }
 function savePrefs() { localStorage.setItem(LS.prefs, JSON.stringify(DB.prefs)); }
+
+/* ─── PIN lock ────────────────────────────────────────────────────
+   A device-level lock screen, like a phone's PIN — not encryption.
+   Entries stay wherever they already lived (localStorage / Firestore);
+   the PIN just gates the UI. Only a salted hash is ever stored. ─── */
+
+async function sha256Hex(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+function randomHex(n) {
+  const arr = new Uint8Array(n);
+  crypto.getRandomValues(arr);
+  return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+function getPinRecord() {
+  try { return JSON.parse(localStorage.getItem(LS.pin) || 'null'); } catch { return null; }
+}
+function hasPinLock() { return !!getPinRecord(); }
+async function setPin(pin) {
+  const salt = randomHex(16);
+  const hash = await sha256Hex(salt + ':' + pin);
+  localStorage.setItem(LS.pin, JSON.stringify({ salt, hash, length: pin.length }));
+}
+async function verifyPinValue(pin) {
+  const rec = getPinRecord();
+  if (!rec) return true;
+  return (await sha256Hex(rec.salt + ':' + pin)) === rec.hash;
+}
+function clearPinLock() { localStorage.removeItem(LS.pin); }
+
+let pinCtrl = null;
+
+function renderPinDots(filled, total) {
+  const n = total || Math.max(filled, 1);
+  $('pin-dots').innerHTML = Array.from({ length: n })
+    .map((_, i) => `<span class="pin-dot${i < filled ? ' filled' : ''}"></span>`).join('');
+}
+function updatePinContinue() {
+  const btn = $('pin-continue');
+  if (btn.style.display !== 'none') btn.disabled = !(pinCtrl && pinCtrl.buffer.length >= 4);
+}
+function openPinGate(cfg) {
+  pinCtrl = Object.assign({ buffer: '' }, cfg);
+  $('pin-title').textContent = cfg.title || 'Enter PIN';
+  $('pin-sub').textContent = cfg.sub || '';
+  $('pin-error').textContent = '';
+  $('pin-continue').style.display = cfg.requiredLen ? 'none' : 'inline-flex';
+  $('pin-forgot').style.display = cfg.showForgot ? 'inline-flex' : 'none';
+  $('pin-cancel').style.visibility = cfg.showCancel ? 'visible' : 'hidden';
+  renderPinDots(0, cfg.requiredLen || null);
+  updatePinContinue();
+  $('pin-gate').classList.add('show');
+}
+function closePinGate() {
+  $('pin-gate').classList.remove('show');
+  pinCtrl = null;
+}
+function pinPressDigit(d) {
+  if (!pinCtrl) return;
+  const max = pinCtrl.requiredLen || 8;
+  if (pinCtrl.buffer.length >= max) return;
+  pinCtrl.buffer += d;
+  renderPinDots(pinCtrl.buffer.length, pinCtrl.requiredLen || null);
+  updatePinContinue();
+  if (pinCtrl.requiredLen && pinCtrl.buffer.length === pinCtrl.requiredLen) submitPin();
+}
+function pinBackspace() {
+  if (!pinCtrl || !pinCtrl.buffer.length) return;
+  pinCtrl.buffer = pinCtrl.buffer.slice(0, -1);
+  renderPinDots(pinCtrl.buffer.length, pinCtrl.requiredLen || null);
+  updatePinContinue();
+  $('pin-error').textContent = '';
+}
+async function submitPin() {
+  if (!pinCtrl || !pinCtrl.buffer.length) return;
+  const cfg = pinCtrl;
+  const pin = cfg.buffer;
+  $('pin-error').textContent = '';
+  const result = await cfg.onSubmit(pin);
+  if (result && result.ok === false) {
+    $('pin-error').textContent = result.error || 'Incorrect PIN';
+    const dots = $('pin-dots');
+    dots.classList.remove('shake'); void dots.offsetWidth; dots.classList.add('shake');
+    if (pinCtrl === cfg) {
+      pinCtrl.buffer = '';
+      renderPinDots(0, cfg.requiredLen || null);
+      updatePinContinue();
+    }
+  }
+}
+function wirePinPad() {
+  document.querySelectorAll('#pin-pad [data-k]').forEach(b => { b.onclick = () => pinPressDigit(b.dataset.k); });
+  $('pin-back').onclick = pinBackspace;
+  $('pin-continue').onclick = submitPin;
+  $('pin-cancel').onclick = () => { const c = pinCtrl; closePinGate(); if (c && c.onCancel) c.onCancel(); };
+  $('pin-forgot').onclick = () => { if (pinCtrl && pinCtrl.onForgot) pinCtrl.onForgot(); };
+  document.addEventListener('keydown', ev => {
+    if (!$('pin-gate').classList.contains('show')) return;
+    if (/^[0-9]$/.test(ev.key)) pinPressDigit(ev.key);
+    else if (ev.key === 'Backspace') pinBackspace();
+    else if (ev.key === 'Enter') submitPin();
+  });
+}
+
+function unlockFlow() {
+  return new Promise(resolve => {
+    const rec = getPinRecord();
+    if (!rec) return resolve(true);
+    openPinGate({
+      title: 'Enter PIN',
+      sub: 'Unlock your journal',
+      requiredLen: rec.length,
+      showForgot: true,
+      onForgot: () => {
+        if (!confirm("Forgot your PIN? This removes the PIN lock — your entries are safe and untouched. You can set a new PIN afterward in Settings.")) return;
+        clearPinLock();
+        closePinGate();
+        toast('PIN lock removed');
+        resolve(true);
+      },
+      onSubmit: async pin => {
+        if (await verifyPinValue(pin)) { closePinGate(); resolve(true); return { ok: true }; }
+        return { ok: false, error: 'Incorrect PIN' };
+      },
+    });
+  });
+}
+function createPinFlow() {
+  return new Promise(resolve => {
+    openPinGate({
+      title: 'Create a PIN',
+      sub: '4–8 digits',
+      showCancel: true,
+      onCancel: () => resolve(false),
+      onSubmit: async pin => {
+        if (pin.length < 4) return { ok: false, error: 'At least 4 digits' };
+        const first = pin;
+        openPinGate({
+          title: 'Confirm PIN',
+          sub: 'Enter it again',
+          showCancel: true,
+          onCancel: () => resolve(false),
+          onSubmit: async pin2 => {
+            if (pin2 !== first) return { ok: false, error: "PINs didn't match — try again" };
+            await setPin(pin2);
+            closePinGate();
+            toast('PIN lock turned on');
+            resolve(true);
+          },
+        });
+        return { ok: true };
+      },
+    });
+  });
+}
+function changePinFlow() {
+  return new Promise(resolve => {
+    const rec = getPinRecord();
+    if (!rec) return createPinFlow().then(resolve);
+    openPinGate({
+      title: 'Current PIN',
+      sub: 'Enter your current PIN',
+      requiredLen: rec.length,
+      showCancel: true,
+      onCancel: () => resolve(false),
+      onSubmit: async pin => {
+        if (!(await verifyPinValue(pin))) return { ok: false, error: 'Incorrect PIN' };
+        createPinFlow().then(resolve);
+        return { ok: true };
+      },
+    });
+  });
+}
+function disablePinFlow() {
+  return new Promise(resolve => {
+    const rec = getPinRecord();
+    if (!rec) return resolve(true);
+    openPinGate({
+      title: 'Enter PIN',
+      sub: 'Confirm to turn off PIN lock',
+      requiredLen: rec.length,
+      showCancel: true,
+      onCancel: () => resolve(false),
+      onSubmit: async pin => {
+        if (!(await verifyPinValue(pin))) return { ok: false, error: 'Incorrect PIN' };
+        clearPinLock();
+        closePinGate();
+        toast('PIN lock turned off');
+        resolve(true);
+      },
+    });
+  });
+}
+async function lockAppNow() {
+  if (!hasPinLock() || $('pin-gate').classList.contains('show')) return;
+  $('app').classList.remove('show');
+  await unlockFlow();
+  $('app').classList.add('show');
+  render();
+}
 
 const allEntries = () => Object.values(DB.entries).filter(e => isKey(e.date));
 const sortedDesc = list => list.slice().sort((a, b) => a.date < b.date ? 1 : -1);
@@ -845,13 +1046,37 @@ function renderInsights() {
   const valid = moodSeries.filter(v => v != null);
   const avg = valid.length ? (valid.reduce((a, b) => a + b, 0) / valid.length).toFixed(1) : '—';
 
+  // Trend: compare this 30-day window to the 30 days before it, so the
+  // number means something instead of floating on its own.
+  const prev30 = [];
+  for (let i = 59; i >= 30; i--) prev30.push(shiftKey(todayKey(), -i));
+  const prevValid = prev30.map(k => (DB.entries[k] && DB.entries[k].mood) || null).filter(v => v != null);
+  const prevAvg = prevValid.length ? prevValid.reduce((a, b) => a + b, 0) / prevValid.length : null;
+  let trendHtml = '';
+  if (valid.length && prevAvg != null) {
+    const diff = parseFloat(avg) - prevAvg;
+    trendHtml = Math.abs(diff) < 0.05
+      ? '<div class="trend-note">steady vs prior 30d</div>'
+      : `<div class="trend-note" style="color:${diff > 0 ? 'var(--green)' : 'var(--red)'}">${diff > 0 ? '+' : ''}${diff.toFixed(1)} vs prior 30d</div>`;
+  }
+
   const dist = MOODS.map(m => ({ ...m, n: list.filter(e => e.mood === m.v).length }));
   const distMax = Math.max(1, ...dist.map(d => d.n));
 
-  const dow = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((name, i) => ({
-    name, n: list.filter(e => parseKey(e.date).getDay() === i).length,
-  }));
-  const dowMax = Math.max(1, ...dow.map(d => d.n));
+  // Raw counts of "which days you write" are skewed by how many of each
+  // weekday have actually occurred since the journal started (e.g. a
+  // journal begun on a Monday racks up Mondays faster). Normalize to a
+  // rate — the share of each weekday actually written on — for an
+  // honest picture of the pattern.
+  const firstKey = list.length ? list.reduce((min, e) => (e.date < min ? e.date : min), list[0].date) : todayKey();
+  const occCount = [0, 0, 0, 0, 0, 0, 0];
+  for (let k = firstKey; daysBetween(todayKey(), k) >= 0; k = shiftKey(k, 1)) occCount[parseKey(k).getDay()]++;
+  const dow = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((name, i) => {
+    const n = list.filter(e => parseKey(e.date).getDay() === i).length;
+    const occ = occCount[i] || 1;
+    return { name, n, rate: n / occ };
+  });
+  const dowMax = Math.max(0.0001, ...dow.map(d => d.rate));
 
   const tags = allTags().slice(0, 8);
   const tagMax = Math.max(1, ...tags.map(t => t.n));
@@ -865,7 +1090,7 @@ function renderInsights() {
     <div class="stat-grid">
       <div class="stat"><div class="stat-val" style="color:var(--accent)">${current}</div><div class="stat-lbl">Current streak</div></div>
       <div class="stat"><div class="stat-val">${longest}</div><div class="stat-lbl">Longest streak</div></div>
-      <div class="stat"><div class="stat-val">${avg}</div><div class="stat-lbl">Avg mood (30d)</div></div>
+      <div class="stat"><div class="stat-val">${avg}</div><div class="stat-lbl">Avg mood (30d)</div>${trendHtml}</div>
       <div class="stat"><div class="stat-val">${list.length}</div><div class="stat-lbl">Days written</div></div>
       <div class="stat"><div class="stat-val">${words.toLocaleString()}</div><div class="stat-lbl">Total words</div></div>
       <div class="stat"><div class="stat-val">${list.length ? Math.round(words / list.length) : 0}</div><div class="stat-lbl">Words per entry</div></div>
@@ -887,10 +1112,11 @@ function renderInsights() {
 
     <div class="card">
       <div class="card-title">Which days you write</div>
+      <p class="muted-note" style="margin-bottom:12px">Share of each weekday you've journaled on, since your first entry</p>
       ${dow.map(d => `<div class="bar-row">
         <span class="bar-lbl">${d.name}</span>
-        <div class="bar-track"><div class="bar-fill" style="width:${(d.n / dowMax) * 100}%"></div></div>
-        <span class="bar-num">${d.n}</span></div>`).join('')}
+        <div class="bar-track"><div class="bar-fill" style="width:${(d.rate / dowMax) * 100}%"></div></div>
+        <span class="bar-num">${Math.round(d.rate * 100)}%</span></div>`).join('')}
     </div>
 
     ${tags.length ? `<div class="card">
@@ -1024,6 +1250,23 @@ function renderSettings() {
     </div>
 
     <div class="card">
+      <div class="card-title">Privacy</div>
+      <div class="set-row">
+        <div><div class="lbl">PIN lock</div><p>Require a PIN to open the journal, on this device</p></div>
+        <button class="btn-secondary" id="pin-toggle">${hasPinLock() ? 'On' : 'Off'}</button>
+      </div>
+      ${hasPinLock() ? `
+      <div class="set-row">
+        <div><div class="lbl">Change PIN</div><p>Update your PIN</p></div>
+        <button class="btn-secondary" id="pin-change">Change</button>
+      </div>
+      <div class="set-row">
+        <div><div class="lbl">Lock now</div><p>Require the PIN again immediately</p></div>
+        <button class="btn-secondary" id="pin-lock-now">Lock</button>
+      </div>` : ''}
+    </div>
+
+    <div class="card">
       <div class="card-title">Data</div>
       <div class="set-row">
         <div><div class="lbl">Export</div><p>Download every entry as a JSON backup</p></div>
@@ -1046,6 +1289,15 @@ function renderSettings() {
   $('signout').onclick = () => fbAuth.signOut().then(() => location.reload());
   $('toggle-prompt').onclick = () => { DB.prefs.hidePrompt = !DB.prefs.hidePrompt; savePrefs(); renderSettings(); };
   $('toggle-theme-2').onclick = () => { toggleTheme(); renderSettings(); };
+
+  $('pin-toggle').onclick = async () => {
+    const ok = hasPinLock() ? await disablePinFlow() : await createPinFlow();
+    if (ok) renderSettings();
+  };
+  const pinChange = $('pin-change');
+  if (pinChange) pinChange.onclick = async () => { if (await changePinFlow()) renderSettings(); };
+  const pinLockNow = $('pin-lock-now');
+  if (pinLockNow) pinLockNow.onclick = () => lockAppNow();
 
   $('export').onclick = () => {
     const payload = { version: 3, exportedAt: new Date().toISOString(), entries: DB.entries };
@@ -1145,8 +1397,19 @@ function wireChrome() {
   });
 
   window.addEventListener('beforeunload', () => { if (state.view === 'write') commitDraft(); });
+
+  const PIN_RELOCK_MS = 30000; // brief backgrounding (e.g. a notification) doesn't force re-entry
+  let hiddenAt = null;
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden' && state.view === 'write') commitDraft();
+    if (document.visibilityState === 'hidden') {
+      if (state.view === 'write') commitDraft();
+      hiddenAt = Date.now();
+    } else if (document.visibilityState === 'visible') {
+      if (hasPinLock() && hiddenAt && (Date.now() - hiddenAt) > PIN_RELOCK_MS && $('app').classList.contains('show')) {
+        lockAppNow();
+      }
+      hiddenAt = null;
+    }
   });
 }
 
@@ -1195,8 +1458,9 @@ function init() {
     await pullAll();
 
     $('boot').classList.add('hide');
+    if (!ready) { ready = true; wireChrome(); wirePinPad(); }
+    if (hasPinLock()) await unlockFlow();
     $('app').classList.add('show');
-    if (!ready) { ready = true; wireChrome(); }
     render();
     window.__journalReady = true;
   });
