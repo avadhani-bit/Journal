@@ -1098,7 +1098,7 @@ function renderInsights() {
 
     <div class="card">
       <div class="card-title">Mood · last 30 days</div>
-      ${valid.length ? '<canvas id="mood-chart" height="150"></canvas>'
+      ${valid.length ? '<canvas id="mood-chart"></canvas>'
         : '<p class="muted-note">Log a few moods and a trend line shows up here.</p>'}
     </div>
 
@@ -1138,39 +1138,75 @@ function renderInsights() {
   buildHeatmap();
 }
 
+let moodChartVals = null;
+
 function drawMoodChart(vals) {
+  if (vals) moodChartVals = vals;
+  const series = moodChartVals;
   const canvas = $('mood-chart');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
+  if (!canvas || !series) return;
+
+  // Measure the CSS box, then size the backing store in device pixels.
+  // The CSS rule for #mood-chart keeps the displayed box at 100% width,
+  // so a high-DPR screen can't stretch the element past its card.
+  const w = canvas.clientWidth;
+  const h = 150;
+  if (!w) return;
   const dpr = window.devicePixelRatio || 1;
-  const w = canvas.clientWidth || 600, h = 150;
-  canvas.width = w * dpr; canvas.height = h * dpr;
-  ctx.scale(dpr, dpr);
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
 
-  const pad = 14, gw = w - pad * 2, gh = h - pad * 2, n = vals.length;
   const cs = getComputedStyle(document.body);
   const accent = (cs.getPropertyValue('--accent') || '#6366F1').trim();
-  const grid = (cs.getPropertyValue('--border-soft') || '#eee').trim();
+  const grid   = (cs.getPropertyValue('--border-soft') || '#eee').trim();
+  const label  = (cs.getPropertyValue('--text-3') || '#9B9CA8').trim();
 
-  ctx.strokeStyle = grid; ctx.lineWidth = 1;
+  // Gutters: room on the left for mood labels, on the bottom for the date range.
+  const padL = 44, padR = 12, padT = 12, padB = 22;
+  const gw = Math.max(1, w - padL - padR);
+  const gh = Math.max(1, h - padT - padB);
+  const n = series.length;
+
+  ctx.font = '600 10px ' + (cs.getPropertyValue('--font') || 'sans-serif').trim();
+  ctx.textBaseline = 'middle';
+
+  const rowLabel = { 5: 'Great', 3: 'Okay', 1: 'Rough' };
+  ctx.lineWidth = 1;
   for (let i = 1; i <= 5; i++) {
-    const y = pad + gh - ((i - 1) / 4) * gh;
-    ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(pad + gw, y); ctx.stroke();
+    const y = padT + gh - ((i - 1) / 4) * gh;
+    ctx.strokeStyle = grid;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + gw, y); ctx.stroke();
+    if (rowLabel[i]) {
+      ctx.fillStyle = label;
+      ctx.textAlign = 'right';
+      ctx.fillText(rowLabel[i], padL - 8, y);
+    }
   }
 
-  const pt = (v, i) => [pad + (n > 1 ? (i / (n - 1)) * gw : gw / 2), pad + gh - ((v - 1) / 4) * gh];
+  ctx.fillStyle = label;
+  ctx.textAlign = 'left';
+  ctx.fillText('30 days ago', padL, h - 6);
+  ctx.textAlign = 'right';
+  ctx.fillText('Today', padL + gw, h - 6);
+
+  const pt = (v, i) => [padL + (n > 1 ? (i / (n - 1)) * gw : gw / 2), padT + gh - ((v - 1) / 4) * gh];
 
   ctx.beginPath();
   let started = false;
-  vals.forEach((v, i) => {
+  series.forEach((v, i) => {
     if (v == null) { started = false; return; }
     const p = pt(v, i);
     if (!started) { ctx.moveTo(p[0], p[1]); started = true; } else ctx.lineTo(p[0], p[1]);
   });
-  ctx.strokeStyle = accent; ctx.lineWidth = 2.4; ctx.lineJoin = 'round'; ctx.stroke();
+  ctx.strokeStyle = accent; ctx.lineWidth = 2.4;
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.stroke();
 
-  vals.forEach((v, i) => {
+  series.forEach((v, i) => {
     if (v == null) return;
     const p = pt(v, i);
     ctx.beginPath(); ctx.arc(p[0], p[1], 2.8, 0, Math.PI * 2);
@@ -1397,6 +1433,14 @@ function wireChrome() {
   });
 
   window.addEventListener('beforeunload', () => { if (state.view === 'write') commitDraft(); });
+
+  // Canvas pixels don't reflow on their own — redraw when the box changes.
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    if (state.view !== 'insights') return;
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => drawMoodChart(), 120);
+  });
 
   const PIN_RELOCK_MS = 30000; // brief backgrounding (e.g. a notification) doesn't force re-entry
   let hiddenAt = null;
